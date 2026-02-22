@@ -22,6 +22,8 @@ const transporter = nodemailer.createTransport({
   host: process.env.SMTP_HOST,
   port: Number(process.env.SMTP_PORT) || 587,
   secure: Number(process.env.SMTP_PORT) === 465,
+  pool: true, // Use pooling for multiple emails
+  maxConnections: 3,
   auth: {
     user: process.env.SMTP_USER,
     pass: process.env.SMTP_PASS,
@@ -273,8 +275,19 @@ async function startServer() {
 
       const event = db.prepare("SELECT * FROM events WHERE id = ?").get(eventId) as any;
       if (event) {
-        await sendEmail(email, `RSVP Confirmation: ${event.title}`, `You've successfully RSVP'd for ${event.title}.`);
-        await sendEmail(event.creator_email, `New RSVP: ${event.title}`, `Someone just RSVP'd: ${email}`);
+        console.log(`📧 Sending RSVP emails for event: ${event.title}`);
+        
+        // Send confirmation to the person who RSVP'd
+        const userRes = await sendEmail(email, `RSVP Confirmation: ${event.title}`, `You've successfully RSVP'd for ${event.title}.`);
+        if (!userRes.success) {
+          console.error(`❌ Failed to send confirmation to user ${email}:`, userRes.error);
+        }
+
+        // Send notification to the event creator
+        const creatorRes = await sendEmail(event.creator_email, `New RSVP: ${event.title}`, `Someone just RSVP'd: ${email}`);
+        if (!creatorRes.success) {
+          console.error(`❌ Failed to send notification to creator ${event.creator_email}:`, creatorRes.error);
+        }
       }
 
       const count = db.prepare("SELECT COUNT(*) as count FROM rsvps WHERE event_id = ?").get(eventId) as { count: number };

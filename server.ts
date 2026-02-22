@@ -126,10 +126,10 @@ async function startServer() {
     
     const checkPort = () => new Promise((resolve) => {
       const socket = new net.Socket();
-      socket.setTimeout(5000);
+      socket.setTimeout(10000); // 10s for the test
       socket.on('connect', () => { socket.destroy(); resolve('Connected (Port is Open)'); });
-      socket.on('timeout', () => { socket.destroy(); resolve('Timeout (Network is blocking this port)'); });
-      socket.on('error', (e: any) => { socket.destroy(); resolve(`Error: ${e.message}`); });
+      socket.on('timeout', () => { socket.destroy(); resolve('Timeout (Render is likely blocking this port)'); });
+      socket.on('error', (e: any) => { socket.destroy(); resolve(`Error: ${e.code} - ${e.message}`); });
       socket.connect(port, host);
     });
 

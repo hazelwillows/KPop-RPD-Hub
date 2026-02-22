@@ -1,0 +1,5 @@
+{
+  "name": "K-Pop RPD Hub",
+  "description": "A public forum for K-Pop Random Play Dance events. Post, discover, and RSVP to RPDs near you.",
+  "requestFramePermissions": ["geolocation"]
+}

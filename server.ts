@@ -22,26 +22,22 @@ const transporter = nodemailer.createTransport({
   host: process.env.SMTP_HOST,
   port: Number(process.env.SMTP_PORT) || 587,
   secure: Number(process.env.SMTP_PORT) === 465,
-  pool: true,
-  maxConnections: 1,
   auth: {
     user: process.env.SMTP_USER,
     pass: process.env.SMTP_PASS,
   },
   tls: {
-    rejectUnauthorized: false,
-    minVersion: 'TLSv1.2'
+    rejectUnauthorized: false
   },
-  // Custom lookup to strictly force IPv4
+  // Force IPv4 to prevent ENETUNREACH on cloud providers
   lookup: (hostname, options, callback) => {
     dns.lookup(hostname, { family: 4 }, (err, address, family) => {
       callback(err, address, family);
     });
   },
-  connectionTimeout: 40000,
-  greetingTimeout: 40000,
-  socketTimeout: 40000,
-  dnsTimeout: 10000,
+  connectionTimeout: 20000,
+  greetingTimeout: 20000,
+  socketTimeout: 20000,
   logger: true,
   debug: true
 });
@@ -54,18 +50,36 @@ async function sendEmail(to: string, subject: string, text: string) {
   
   try {
     const fromName = "RPD Hub";
-    const fromEmail = process.env.SMTP_FROM || process.env.SMTP_USER;
+    // IMPORTANT: For MailSlurp/Brevo/SendGrid, the 'from' address MUST be a verified email.
+    // If SMTP_USER is an API key, SMTP_FROM must be set to a valid email address.
+    const fromEmail = process.env.SMTP_FROM || (process.env.SMTP_USER.includes('@') ? process.env.SMTP_USER : 'noreply@rpdhub.com');
     
+    if (!fromEmail.includes('@')) {
+      console.warn("⚠️ WARNING: The 'From' email address does not look like a valid email. This will likely cause delivery failure.");
+    }
+    
+    console.log(`📧 Attempting to send email:
+      To: ${to}
+      From: "${fromName}" <${fromEmail}>
+      Subject: ${subject}
+    `);
+
     const info = await transporter.sendMail({
       from: `"${fromName}" <${fromEmail}>`,
       to,
       subject,
       text,
     });
-    console.log("✅ Email sent to", to, ":", info.messageId);
+    
+    console.log("✅ Email sent successfully:", info.messageId);
     return { success: true, messageId: info.messageId };
   } catch (error: any) {
-    console.error("❌ Failed to send email to", to, ":", error.message);
+    console.error("❌ SMTP Error details:", {
+      message: error.message,
+      code: error.code,
+      command: error.command,
+      response: error.response
+    });
     return { success: false, error: error.message };
   }
 }
@@ -142,6 +156,7 @@ async function startServer() {
       smtp_port: port,
       smtp_port_status: portStatus,
       smtp_configured: !!process.env.SMTP_USER,
+      smtp_from: process.env.SMTP_FROM || (process.env.SMTP_USER?.includes('@') ? process.env.SMTP_USER : 'Not Set (Using Fallback)'),
       db_path: path.join(__dirname, "rpd.db"),
       timestamp: new Date().toISOString()
     });

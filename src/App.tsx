@@ -127,7 +127,7 @@ export default function App() {
                 try {
                   const res = await fetch('/api/debug');
                   const data = await res.json();
-                  alert(`System Status:\n\nSMTP Host: ${data.smtp_host}\nSMTP Port: ${data.smtp_port}\nNetwork Status: ${data.smtp_port_status}\nSMTP Configured: ${data.smtp_configured}`);
+                  alert(`System Status:\n\nSMTP Host: ${data.smtp_host}\nSMTP Port: ${data.smtp_port}\nNetwork Status: ${data.smtp_port_status}\nSMTP Configured: ${data.smtp_configured}\nSMTP From: ${data.smtp_from}`);
                 } catch (err) {
                   alert('Could not reach backend debug endpoint.');
                 }

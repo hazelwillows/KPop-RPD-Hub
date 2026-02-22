@@ -88,7 +88,7 @@ export default function App() {
         }
         setShowRSVPModal(false);
         setRSVPEmail('');
-        alert('RSVP successful! Check your email for details.');
+        alert('RSVP successful! Check your email for details (and your Spam folder just in case).');
       } else {
         const data = await res.json();
         alert(data.error || 'Failed to RSVP');
@@ -480,6 +480,7 @@ export default function App() {
                     if (res.ok) {
                       setShowPostModal(false);
                       fetchEvents();
+                      alert('Event created successfully! Check your email for confirmation (and your Spam folder).');
                     } else {
                       const errorData = await res.json();
                       alert(errorData.error || 'Failed to create event. Please check all fields.');

@@ -32,19 +32,22 @@ async function sendEmail(to: string, subject: string, text: string) {
     return { success: false, error: "SMTP not configured" };
   }
   
-  // We don't await this in the main routes to keep the UI fast
-  transporter.sendMail({
-    from: process.env.SMTP_FROM || process.env.SMTP_USER,
-    to,
-    subject,
-    text,
-  }).then(info => {
+  try {
+    const fromName = "RPD Hub";
+    const fromEmail = process.env.SMTP_FROM || process.env.SMTP_USER;
+    
+    const info = await transporter.sendMail({
+      from: `"${fromName}" <${fromEmail}>`,
+      to,
+      subject,
+      text,
+    });
     console.log("✅ Email sent to", to, ":", info.messageId);
-  }).catch(error => {
+    return { success: true, messageId: info.messageId };
+  } catch (error: any) {
     console.error("❌ Failed to send email to", to, ":", error.message);
-  });
-  
-  return { success: true }; // Return true immediately to keep the flow moving
+    return { success: false, error: error.message };
+  }
 }
 
 // Initialize database
@@ -188,8 +191,8 @@ async function startServer() {
       const eventId = result.lastInsertRowid;
       console.log("💾 Event saved to DB with ID:", eventId);
 
-      // Send confirmation email in background
-      sendEmail(creator_email, `Event Created: ${title}`, `Hi! Your RPD event "${title}" has been successfully posted.`);
+      // Send confirmation email
+      await sendEmail(creator_email, `Event Created: ${title}`, `Hi! Your RPD event "${title}" has been successfully posted.`);
 
       res.json({ id: eventId });
     } catch (err: any) {
@@ -218,8 +221,8 @@ async function startServer() {
 
       const event = db.prepare("SELECT * FROM events WHERE id = ?").get(eventId) as any;
       if (event) {
-        sendEmail(email, `RSVP Confirmation: ${event.title}`, `You've successfully RSVP'd for ${event.title}.`);
-        sendEmail(event.creator_email, `New RSVP: ${event.title}`, `Someone just RSVP'd: ${email}`);
+        await sendEmail(email, `RSVP Confirmation: ${event.title}`, `You've successfully RSVP'd for ${event.title}.`);
+        await sendEmail(event.creator_email, `New RSVP: ${event.title}`, `Someone just RSVP'd: ${email}`);
       }
 
       const count = db.prepare("SELECT COUNT(*) as count FROM rsvps WHERE event_id = ?").get(eventId) as { count: number };

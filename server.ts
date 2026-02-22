@@ -4,6 +4,12 @@ import Database from "better-sqlite3";
 import path from "path";
 import nodemailer from "nodemailer";
 import { fileURLToPath } from 'url';
+import dns from 'node:dns';
+
+// Force IPv4 for all network connections (fixes ENETUNREACH on some cloud providers)
+if (dns.setDefaultResultOrder) {
+  dns.setDefaultResultOrder('ipv4first');
+}
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -23,8 +29,7 @@ const transporter = nodemailer.createTransport({
     rejectUnauthorized: false
   },
   connectionTimeout: 10000,
-  greetingTimeout: 10000,
-  family: 4 // Force IPv4 to avoid ENETUNREACH errors on IPv6
+  greetingTimeout: 10000
 });
 
 async function sendEmail(to: string, subject: string, text: string) {
@@ -248,7 +253,7 @@ async function startServer() {
     });
   }
 
-  app.listen(PORT, "0.0.0.0", () => {
+  app.listen(Number(PORT), "0.0.0.0", () => {
     console.log(`Server running on http://localhost:${PORT}`);
   });
 }

@@ -26,11 +26,13 @@ const transporter = nodemailer.createTransport({
     pass: process.env.SMTP_PASS,
   },
   tls: {
-    rejectUnauthorized: false
+    rejectUnauthorized: false,
+    minVersion: 'TLSv1.2'
   },
-  connectionTimeout: 10000,
-  greetingTimeout: 10000,
-  family: 4, // Force IPv4 to avoid ENETUNREACH errors on IPv6-only environments
+  connectionTimeout: 30000, // Increased to 30s
+  greetingTimeout: 30000,
+  socketTimeout: 30000,
+  family: 4, // Force IPv4
   logger: true,
   debug: true
 });

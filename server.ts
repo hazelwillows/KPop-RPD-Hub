@@ -29,7 +29,10 @@ const transporter = nodemailer.createTransport({
     rejectUnauthorized: false
   },
   connectionTimeout: 10000,
-  greetingTimeout: 10000
+  greetingTimeout: 10000,
+  family: 4, // Force IPv4 to avoid ENETUNREACH errors on IPv6-only environments
+  logger: true,
+  debug: true
 });
 
 async function sendEmail(to: string, subject: string, text: string) {

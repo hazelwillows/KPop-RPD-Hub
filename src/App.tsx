@@ -35,6 +35,8 @@ export default function App() {
   const [events, setEvents] = useState<RPDEvent[]>([]);
   const [loading, setLoading] = useState(true);
   const [showPostModal, setShowPostModal] = useState(false);
+  const [showRSVPModal, setShowRSVPModal] = useState(false);
+  const [rsvpEmail, setRSVPEmail] = useState('');
   const [selectedEvent, setSelectedEvent] = useState<RPDEvent | null>(null);
   
   // Filters
@@ -67,14 +69,26 @@ export default function App() {
   }, [searchQuery, filterLocation, filterProficiency, filterArtistType]);
 
   const handleRSVP = async (eventId: number) => {
+    if (!rsvpEmail) {
+      setShowRSVPModal(true);
+      return;
+    }
+
     try {
-      const res = await fetch(`/api/events/${eventId}/rsvp`, { method: 'POST' });
+      const res = await fetch(`/api/events/${eventId}/rsvp`, { 
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: rsvpEmail })
+      });
       if (res.ok) {
         const data = await res.json();
         setEvents(prev => prev.map(e => e.id === eventId ? { ...e, rsvp_count: data.rsvp_count } : e));
         if (selectedEvent?.id === eventId) {
           setSelectedEvent(prev => prev ? { ...prev, rsvp_count: data.rsvp_count } : null);
         }
+        setShowRSVPModal(false);
+        setRSVPEmail('');
+        alert('RSVP successful! Check your email for details.');
       } else {
         const data = await res.json();
         alert(data.error || 'Failed to RSVP');
@@ -374,6 +388,56 @@ export default function App() {
         )}
       </AnimatePresence>
 
+      {/* RSVP Email Modal */}
+      <AnimatePresence>
+        {showRSVPModal && (
+          <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 sm:p-6">
+            <motion.div 
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setShowRSVPModal(false)}
+              className="absolute inset-0 bg-black/60 backdrop-blur-sm"
+            />
+            <motion.div 
+              initial={{ scale: 0.9, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.9, opacity: 0 }}
+              className="relative w-full max-w-md bg-white rounded-3xl shadow-2xl overflow-hidden p-8"
+            >
+              <h2 className="text-2xl font-bold mb-4">Confirm RSVP</h2>
+              <p className="text-gray-600 mb-6">Enter your email to receive event details and confirm your spot.</p>
+              
+              <div className="space-y-4">
+                <div>
+                  <label className="block text-sm font-bold text-gray-700 mb-1">Email Address</label>
+                  <input 
+                    type="email" 
+                    placeholder="you@example.com" 
+                    className="w-full p-3 bg-gray-50 border border-gray-200 rounded-xl outline-none focus:ring-2 focus:ring-indigo-500"
+                    value={rsvpEmail}
+                    onChange={(e) => setRSVPEmail(e.target.value)}
+                    onKeyDown={(e) => e.key === 'Enter' && selectedEvent && handleRSVP(selectedEvent.id)}
+                  />
+                </div>
+                <button 
+                  onClick={() => selectedEvent && handleRSVP(selectedEvent.id)}
+                  className="w-full bg-indigo-600 text-white py-4 rounded-2xl font-bold hover:bg-indigo-700 transition-all shadow-lg shadow-indigo-200 active:scale-95"
+                >
+                  Confirm & Send Details
+                </button>
+                <button 
+                  onClick={() => setShowRSVPModal(false)}
+                  className="w-full text-gray-500 font-medium py-2 hover:underline"
+                >
+                  Cancel
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
       {/* Post Event Modal */}
       <AnimatePresence>
         {showPostModal && (
@@ -416,9 +480,13 @@ export default function App() {
                     if (res.ok) {
                       setShowPostModal(false);
                       fetchEvents();
+                    } else {
+                      const errorData = await res.json();
+                      alert(errorData.error || 'Failed to create event. Please check all fields.');
                     }
                   } catch (err) {
                     console.error('Failed to post event:', err);
+                    alert('A network error occurred. Please try again.');
                   }
                 }}
                 className="overflow-y-auto p-8 space-y-6"
@@ -463,6 +531,11 @@ export default function App() {
                     </select>
                   </div>
 
+                  <div className="md:col-span-2">
+                    <label className="block text-sm font-bold text-gray-700 mb-1">Your Email (for notifications)</label>
+                    <input name="creator_email" required type="email" placeholder="you@example.com" className="w-full p-3 bg-gray-50 border border-gray-200 rounded-xl outline-none focus:ring-2 focus:ring-indigo-500" />
+                  </div>
+
                   <div>
                     <label className="block text-sm font-bold text-gray-700 mb-1">Format</label>
                     <select name="format" className="w-full p-3 bg-gray-50 border border-gray-200 rounded-xl outline-none focus:ring-2 focus:ring-indigo-500">
@@ -487,10 +560,44 @@ export default function App() {
                   </div>
                 </div>
 
-                <div className="pt-4">
+                <div className="pt-4 space-y-4">
                   <button type="submit" className="w-full bg-black text-white py-4 rounded-2xl font-bold hover:bg-gray-800 transition-all shadow-lg active:scale-[0.98]">
                     Create Event
                   </button>
+                  
+                  <div className="pt-4 border-t border-gray-100">
+                    <p className="text-xs text-gray-400 mb-2">Trouble with emails? Test your SMTP settings:</p>
+                    <div className="flex gap-2">
+                      <input 
+                        type="email" 
+                        id="test-email-input"
+                        placeholder="Test email address" 
+                        className="flex-1 p-2 text-xs bg-gray-50 border border-gray-200 rounded-lg outline-none"
+                      />
+                      <button 
+                        type="button"
+                        onClick={async () => {
+                          const email = (document.getElementById('test-email-input') as HTMLInputElement).value;
+                          if (!email) return alert('Enter an email to test');
+                          try {
+                            const res = await fetch('/api/test-email', {
+                              method: 'POST',
+                              headers: { 'Content-Type': 'application/json' },
+                              body: JSON.stringify({ email })
+                            });
+                            const data = await res.json();
+                            if (res.ok) alert(data.message);
+                            else alert('SMTP Error: ' + data.error);
+                          } catch (err) {
+                            alert('Network error testing SMTP');
+                          }
+                        }}
+                        className="px-4 py-2 bg-gray-100 text-gray-600 text-xs font-bold rounded-lg hover:bg-gray-200 transition-colors"
+                      >
+                        Test SMTP
+                      </button>
+                    </div>
+                  </div>
                 </div>
               </form>
             </motion.div>

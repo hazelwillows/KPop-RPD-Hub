@@ -5,8 +5,9 @@ import path from "path";
 import nodemailer from "nodemailer";
 import { fileURLToPath } from 'url';
 import dns from 'node:dns';
+import net from 'node:net';
 
-// Force IPv4 for all network connections (fixes ENETUNREACH on some cloud providers)
+// Force IPv4 globally
 if (dns.setDefaultResultOrder) {
   dns.setDefaultResultOrder('ipv4first');
 }
@@ -21,6 +22,8 @@ const transporter = nodemailer.createTransport({
   host: process.env.SMTP_HOST,
   port: Number(process.env.SMTP_PORT) || 587,
   secure: Number(process.env.SMTP_PORT) === 465,
+  pool: true,
+  maxConnections: 1,
   auth: {
     user: process.env.SMTP_USER,
     pass: process.env.SMTP_PASS,
@@ -29,10 +32,16 @@ const transporter = nodemailer.createTransport({
     rejectUnauthorized: false,
     minVersion: 'TLSv1.2'
   },
-  connectionTimeout: 30000, // Increased to 30s
-  greetingTimeout: 30000,
-  socketTimeout: 30000,
-  family: 4, // Force IPv4
+  // Custom lookup to strictly force IPv4
+  lookup: (hostname, options, callback) => {
+    dns.lookup(hostname, { family: 4 }, (err, address, family) => {
+      callback(err, address, family);
+    });
+  },
+  connectionTimeout: 40000,
+  greetingTimeout: 40000,
+  socketTimeout: 40000,
+  dnsTimeout: 10000,
   logger: true,
   debug: true
 });
@@ -110,11 +119,28 @@ async function startServer() {
 
   app.use(express.json());
 
-  // Debug Endpoint (Safe for production)
-  app.get("/api/debug", (req, res) => {
+  // Debug Endpoint (Highest Priority)
+  app.get("/api/debug", async (req, res) => {
+    const host = process.env.SMTP_HOST || 'smtp.gmail.com';
+    const port = Number(process.env.SMTP_PORT) || 587;
+    
+    const checkPort = () => new Promise((resolve) => {
+      const socket = new net.Socket();
+      socket.setTimeout(5000);
+      socket.on('connect', () => { socket.destroy(); resolve('Connected (Port is Open)'); });
+      socket.on('timeout', () => { socket.destroy(); resolve('Timeout (Network is blocking this port)'); });
+      socket.on('error', (e: any) => { socket.destroy(); resolve(`Error: ${e.message}`); });
+      socket.connect(port, host);
+    });
+
+    const portStatus = await checkPort();
+
     res.json({
       env: process.env.NODE_ENV,
       port: PORT,
+      smtp_host: host,
+      smtp_port: port,
+      smtp_port_status: portStatus,
       smtp_configured: !!process.env.SMTP_USER,
       db_path: path.join(__dirname, "rpd.db"),
       timestamp: new Date().toISOString()

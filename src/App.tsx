@@ -12,7 +12,8 @@ import {
   ChevronRight,
   Filter,
   X,
-  CheckCircle2
+  CheckCircle2,
+  Activity
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 
@@ -121,6 +122,21 @@ export default function App() {
                 onChange={(e) => setSearchQuery(e.target.value)}
               />
             </div>
+            <button 
+              onClick={async () => {
+                try {
+                  const res = await fetch('/api/debug');
+                  const data = await res.json();
+                  alert(`System Status:\n\nSMTP Host: ${data.smtp_host}\nSMTP Port: ${data.smtp_port}\nNetwork Status: ${data.smtp_port_status}\nSMTP Configured: ${data.smtp_configured}`);
+                } catch (err) {
+                  alert('Could not reach backend debug endpoint.');
+                }
+              }}
+              className="p-2 text-gray-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-xl transition-all"
+              title="Check System Status"
+            >
+              <Activity size={20} />
+            </button>
             <button 
               onClick={() => setShowPostModal(true)}
               className="bg-black text-white px-4 py-2 rounded-xl font-medium flex items-center gap-2 hover:bg-gray-800 transition-colors shadow-sm"

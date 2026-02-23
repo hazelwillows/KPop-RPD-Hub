@@ -19,19 +19,17 @@ const db = new Database("rpd.db");
 
 // Email transporter setup
 const transporter = nodemailer.createTransport({
-  host: process.env.SMTP_HOST,
-  port: Number(process.env.SMTP_PORT) || 587,
-  secure: Number(process.env.SMTP_PORT) === 465,
-  pool: true, // Use pooling for multiple emails
-  maxConnections: 3,
+  host: process.env.SMTP_HOST || 'smtp.resend.com',
+  port: Number(process.env.SMTP_PORT) || 465,
+  secure: Number(process.env.SMTP_PORT) === 465 || !process.env.SMTP_PORT, // Default to secure if port is 465 or unset
+  pool: true,
   auth: {
-    user: process.env.SMTP_USER,
+    user: process.env.SMTP_USER || 'resend',
     pass: process.env.SMTP_PASS,
   },
   tls: {
     rejectUnauthorized: false
   },
-  // Force IPv4 to prevent ENETUNREACH on cloud providers
   lookup: (hostname, options, callback) => {
     dns.lookup(hostname, { family: 4 }, (err, address, family) => {
       callback(err, address, family);
@@ -52,19 +50,11 @@ async function sendEmail(to: string, subject: string, text: string) {
   
   try {
     const fromName = "RPD Hub";
-    // IMPORTANT: For MailSlurp/Brevo/SendGrid, the 'from' address MUST be a verified email.
-    // If SMTP_USER is an API key, SMTP_FROM must be set to a valid email address.
-    const fromEmail = process.env.SMTP_FROM || (process.env.SMTP_USER.includes('@') ? process.env.SMTP_USER : 'noreply@rpdhub.com');
+    // Fallback to a dummy address if nothing is configured. 
+    // Note: Most real SMTP providers will still require you to set SMTP_FROM in Render to work.
+    const fromEmail = process.env.SMTP_FROM || (process.env.SMTP_USER?.includes('@') ? process.env.SMTP_USER : 'noreply@kpop-rpd-hub.onrender.com');
     
-    if (!fromEmail.includes('@')) {
-      console.warn("⚠️ WARNING: The 'From' email address does not look like a valid email. This will likely cause delivery failure.");
-    }
-    
-    console.log(`📧 Attempting to send email:
-      To: ${to}
-      From: "${fromName}" <${fromEmail}>
-      Subject: ${subject}
-    `);
+    console.log(`📧 SMTP Attempt: To=${to}, From=${fromEmail}`);
 
     const info = await transporter.sendMail({
       from: `"${fromName}" <${fromEmail}>`,
@@ -73,7 +63,12 @@ async function sendEmail(to: string, subject: string, text: string) {
       text,
     });
     
-    console.log("✅ Email sent successfully:", info.messageId);
+    console.log("✅ SMTP Server Response:", {
+      messageId: info.messageId,
+      accepted: info.accepted, // This will show if the server accepted the Gmail address
+      rejected: info.rejected,
+      response: info.response
+    });
     return { success: true, messageId: info.messageId };
   } catch (error: any) {
     console.error("❌ SMTP Error details:", {
@@ -162,6 +157,15 @@ async function startServer() {
       db_path: path.join(__dirname, "rpd.db"),
       timestamp: new Date().toISOString()
     });
+  });
+
+  // Test Email Endpoint
+  app.post("/api/debug/test-email", async (req, res) => {
+    const { email } = req.body;
+    if (!email) return res.status(400).json({ error: "Email required" });
+    
+    const result = await sendEmail(email, "RPD Hub Test Email", "If you see this, your SMTP settings are working perfectly!");
+    res.json(result);
   });
 
   // Test Email Route
@@ -255,6 +259,15 @@ async function startServer() {
     }
   });
 
+  app.get("/api/events/:id/rsvps", (req, res) => {
+    try {
+      const rsvps = db.prepare("SELECT email, created_at FROM rsvps WHERE event_id = ? ORDER BY created_at DESC").all(req.params.id);
+      res.json(rsvps);
+    } catch (err) {
+      res.status(500).json({ error: "Database error" });
+    }
+  });
+
   app.post("/api/events/:id/rsvp", async (req, res) => {
     const eventId = req.params.id;
     const { email } = req.body;
@@ -275,19 +288,14 @@ async function startServer() {
 
       const event = db.prepare("SELECT * FROM events WHERE id = ?").get(eventId) as any;
       if (event) {
-        console.log(`📧 Sending RSVP emails for event: ${event.title}`);
+        console.log(`📧 Backgrounding RSVP emails for event: ${event.title}`);
         
-        // Send confirmation to the person who RSVP'd
-        const userRes = await sendEmail(email, `RSVP Confirmation: ${event.title}`, `You've successfully RSVP'd for ${event.title}.`);
-        if (!userRes.success) {
-          console.error(`❌ Failed to send confirmation to user ${email}:`, userRes.error);
-        }
+        // Fire-and-forget: Don't 'await' these so the user gets an instant response
+        sendEmail(email, `RSVP Confirmation: ${event.title}`, `You've successfully RSVP'd for ${event.title}.`)
+          .catch(e => console.error("Background Email Error (User):", e));
 
-        // Send notification to the event creator
-        const creatorRes = await sendEmail(event.creator_email, `New RSVP: ${event.title}`, `Someone just RSVP'd: ${email}`);
-        if (!creatorRes.success) {
-          console.error(`❌ Failed to send notification to creator ${event.creator_email}:`, creatorRes.error);
-        }
+        sendEmail(event.creator_email, `New RSVP: ${event.title}`, `Someone just RSVP'd: ${email}`)
+          .catch(e => console.error("Background Email Error (Creator):", e));
       }
 
       const count = db.prepare("SELECT COUNT(*) as count FROM rsvps WHERE event_id = ?").get(eventId) as { count: number };

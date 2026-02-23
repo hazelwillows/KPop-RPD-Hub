@@ -13,7 +13,8 @@ import {
   Filter,
   X,
   CheckCircle2,
-  Activity
+  Activity,
+  Settings
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 
@@ -38,6 +39,9 @@ export default function App() {
   const [showPostModal, setShowPostModal] = useState(false);
   const [showRSVPModal, setShowRSVPModal] = useState(false);
   const [rsvpEmail, setRSVPEmail] = useState('');
+  const [eventRSVPs, setEventRSVPs] = useState<{email: string, created_at: string}[]>([]);
+  const [showRSVPList, setShowRSVPList] = useState(false);
+  const [isCreatorVerified, setIsCreatorVerified] = useState(false);
   const [selectedEvent, setSelectedEvent] = useState<RPDEvent | null>(null);
   
   // Filters
@@ -68,6 +72,27 @@ export default function App() {
   useEffect(() => {
     fetchEvents();
   }, [searchQuery, filterLocation, filterProficiency, filterArtistType]);
+
+  useEffect(() => {
+    setIsCreatorVerified(false);
+    setShowRSVPList(false);
+    if (selectedEvent) {
+      fetch(`/api/events/${selectedEvent.id}/rsvps`)
+        .then(res => res.json())
+        .then(data => setEventRSVPs(data))
+        .catch(() => {});
+    }
+  }, [selectedEvent]);
+
+  const verifyCreator = () => {
+    const email = prompt("Enter the creator email address to manage this event:");
+    if (email === selectedEvent?.creator_email) {
+      setIsCreatorVerified(true);
+      setShowRSVPList(true);
+    } else if (email) {
+      alert("Email does not match the creator of this event.");
+    }
+  };
 
   const handleRSVP = async (eventId: number) => {
     if (!rsvpEmail) {
@@ -124,14 +149,28 @@ export default function App() {
             </div>
             <button 
               onClick={async () => {
-                try {
-                  const res = await fetch('/api/debug');
-                  const data = await res.json();
-                  alert(`System Status:\n\nSMTP Host: ${data.smtp_host}\nSMTP Port: ${data.smtp_port}\nNetwork Status: ${data.smtp_port_status}\nSMTP Configured: ${data.smtp_configured}\nSMTP From: ${data.smtp_from}`);
-                } catch (err) {
-                  alert('Could not reach backend debug endpoint.');
+              try {
+                const res = await fetch('/api/debug');
+                const data = await res.json();
+                const statusMsg = `System Status:\n\nSMTP Host: ${data.smtp_host}\nSMTP Port: ${data.smtp_port}\nNetwork Status: ${data.smtp_port_status}\nSMTP Configured: ${data.smtp_configured}\nSMTP From: ${data.smtp_from}`;
+                
+                if (confirm(`${statusMsg}\n\nWould you like to send a test email?`)) {
+                  const testEmail = prompt("Enter email address for test:");
+                  if (testEmail) {
+                    const testRes = await fetch('/api/debug/test-email', {
+                      method: 'POST',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({ email: testEmail })
+                    });
+                    const testData = await testRes.json();
+                    if (testData.success) alert("✅ Test email sent! Check your inbox (and spam).");
+                    else alert(`❌ Failed: ${testData.error}`);
+                  }
                 }
-              }}
+              } catch (err) {
+                alert('Could not reach backend debug endpoint.');
+              }
+            }}
               className="p-2 text-gray-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-xl transition-all"
               title="Check System Status"
             >
@@ -367,17 +406,60 @@ export default function App() {
                 </div>
 
                 <div className="space-y-6">
-                  <div>
-                    <h4 className="text-sm font-bold text-gray-400 uppercase mb-2">Description</h4>
-                    <p className="text-gray-700 leading-relaxed">{selectedEvent.description}</p>
+                  <div className="flex items-center justify-between">
+                    <h4 className="text-sm font-bold text-gray-400 uppercase">Description</h4>
+                    {!showRSVPList && (
+                      <button 
+                        onClick={verifyCreator}
+                        className="text-xs font-bold text-indigo-600 hover:underline flex items-center gap-1"
+                      >
+                        <Settings size={12} />
+                        Manage Event
+                      </button>
+                    )}
+                    {showRSVPList && (
+                      <button 
+                        onClick={() => setShowRSVPList(false)}
+                        className="text-xs font-bold text-gray-500 hover:underline"
+                      >
+                        Back to Details
+                      </button>
+                    )}
                   </div>
 
-                  <div>
-                    <h4 className="text-sm font-bold text-gray-400 uppercase mb-2">Playlist</h4>
-                    <div className="bg-gray-50 p-4 rounded-xl border border-gray-100 whitespace-pre-wrap font-mono text-sm">
-                      {selectedEvent.playlist}
+                  {showRSVPList && isCreatorVerified ? (
+                    <div className="space-y-3 animate-in fade-in slide-in-from-bottom-2 duration-300">
+                      <div className="flex items-center justify-between">
+                        <h5 className="text-sm font-bold text-gray-700">Attendee Emails ({eventRSVPs.length})</h5>
+                        <span className="text-[10px] bg-indigo-100 text-indigo-700 px-2 py-1 rounded-full font-bold">Creator View</span>
+                      </div>
+                      {eventRSVPs.length > 0 ? (
+                        <div className="max-h-64 overflow-y-auto space-y-2 pr-2">
+                          {eventRSVPs.map((rsvp, idx) => (
+                            <div key={idx} className="flex items-center justify-between p-3 bg-gray-50 rounded-xl border border-gray-100">
+                              <span className="text-sm font-medium text-gray-700">{rsvp.email}</span>
+                              <span className="text-[10px] text-gray-400">{new Date(rsvp.created_at).toLocaleDateString()}</span>
+                            </div>
+                          ))}
+                        </div>
+                      ) : (
+                        <p className="text-sm text-gray-400 italic">No RSVPs yet.</p>
+                      )}
                     </div>
-                  </div>
+                  ) : (
+                    <>
+                      <div>
+                        <p className="text-gray-700 leading-relaxed">{selectedEvent.description}</p>
+                      </div>
+
+                      <div>
+                        <h4 className="text-sm font-bold text-gray-400 uppercase mb-2">Playlist</h4>
+                        <div className="bg-gray-50 p-4 rounded-xl border border-gray-100 whitespace-pre-wrap font-mono text-sm">
+                          {selectedEvent.playlist}
+                        </div>
+                      </div>
+                    </>
+                  )}
                 </div>
               </div>
 
